@@ -1,0 +1,61 @@
+import type { CreateProjectPayload, CreateProjectResponse, ProjectMessagePayload, ProjectStatusResponse } from "./types";
+
+const RAW_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+export const API_BASE = RAW_BASE.replace(/\/+$/, "");
+
+async function parseOrThrow<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    const detail = body?.detail ?? `Request failed with ${response.status}`;
+    if (typeof detail === "string") {
+      throw new Error(detail);
+    }
+    if (detail?.message) {
+      const missing = [
+        ...(detail.missing_config ?? []),
+        ...(detail.missing_dependencies ?? []),
+      ];
+      throw new Error(missing.length ? `${detail.message} Missing: ${missing.join(", ")}` : detail.message);
+    }
+    throw new Error(JSON.stringify(detail));
+  }
+  return body as T;
+}
+
+export async function createProject(payload: CreateProjectPayload): Promise<CreateProjectResponse> {
+  const response = await fetch(`${API_BASE}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseOrThrow<CreateProjectResponse>(response);
+}
+
+export async function getProject(projectId: string): Promise<ProjectStatusResponse> {
+  const response = await fetch(`${API_BASE}/api/projects/${projectId}`, {
+    cache: "no-store",
+  });
+  return parseOrThrow<ProjectStatusResponse>(response);
+}
+
+export async function sendProjectMessage(projectId: string, payload: ProjectMessagePayload): Promise<ProjectStatusResponse> {
+  const response = await fetch(`${API_BASE}/api/projects/${projectId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseOrThrow<ProjectStatusResponse>(response);
+}
+
+export function mediaUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("/media/")) return `${API_BASE}${path}`;
+  const marker = "/outputs/";
+  const index = path.indexOf(marker);
+  if (index >= 0) {
+    return `${API_BASE}/media/${path.slice(index + marker.length)}`;
+  }
+  return path;
+}
